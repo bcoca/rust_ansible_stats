@@ -1,4 +1,5 @@
 /// Returns stat and other info about a file
+extern crate exitcode;
 
 use checksums::{Algorithm, hash_file};
 use phf::phf_map;
@@ -7,6 +8,7 @@ use serde::{Serialize, Deserialize};
 // use std::fs;
 // use std::os::linux::fs::MetadataExt as LinuxMetadata;
 // use std::os::unix::fs::MetadataExt as Metadata;
+use std::env;
 use std::os::unix::fs::PermissionsExt;
 use std::ops::Not;
 use std::path::Path;
@@ -38,17 +40,11 @@ use std::str::FromStr;
 //     println!{"{}",timestamp_str};
 // }
 
-#[derive(Default, Deserialize)]
-#[allow(non_camel_case_types)]
-enum ChecksumAlgorithims {
-    MD5,
-    #[default]
-    SHA1,
-    SHA244,
-    SHA256,
-    SHA384,
-    SHA512,
-}
+// cause serde cannot currently use bools for default
+// fn True(){return Some(true);}
+// fn False(){return Some(false);}
+// fn sha1(){return Some("sha1");}
+
 
 // #[serde(deny_unknown_fields)] // TODO: add once 'internal fields' are also added
 #[derive(Deserialize, Default)] // AnsibleModuleArgs macro! (to include all hidden args
@@ -57,29 +53,53 @@ struct ModuleArgs {
     #[serde(alias = "name", alias = "dest")]
     path: String,
     follow: Option<bool>,
-    #[serde(alias = "mime", alias = "mime_type", alias = "mime-type")]
+    #[serde(alias = "mime", alias = "mime_type", alias = "mime-type")] //, default = "True")]
     get_mime: Option<bool>,
-    #[serde(alias = "attr", alias = "attributes")]
+    #[serde(alias = "attr", alias = "attributes")] //, default = "True")]
     get_attributes: Option<bool>,
-    #[serde(alias = "checksum")]
+    #[serde(alias = "checksum")] //, default = "True")]
     get_checksum: Option<bool>,
-    #[serde(alias = "checksum_algo")]
-    checksum_algorithim: Option<ChecksumAlgorithims>,
+    #[serde(alias = "checksum_algo")] //, default = "sha1")]
+    checksum_algorithim: Option<String>,
 }
 
-// impl Default for ModuleArgs {
-//     fn default() -> Self {
-//         ModuleArgs {
-//             follow = false,
-//             get_mime = true,
-//             get_attributes = true,
-//             get_checksum = true,
-//             checksum_algorithim = "sha1",
-//         }
-//     }
-// }
-
 // TODO: move to lib
+fn args_from_file(path: &Path) -> ModuleArgs {
+
+    let args: ModuleArgs;
+    let exists = path.try_exists();
+    match exists {
+        Ok(x) => {
+            if x {
+                let file_contents =  std::fs::read_to_string(path).unwrap();
+                args = serde_json::from_str(&file_contents).expect("Invalid JSON args file for this module.");
+            } else {
+                panic!("Module arguments file provided ({:?}) is not accessible or does not exist!", path);
+            }
+            x
+        },
+        Err(e) => {
+            // TODO: fail_json/raise error?
+            // panic!("Cannot access args: {:?}", e);
+            eprintln!("Cannot access args: {:?}", e);
+            args = ModuleArgs {
+                path:  String::from("/etc/hosts"),
+                //path = String::from("/home/bcoca/testing123"),
+                //path = String::from("/nofile"),
+                follow: Some(true),
+                get_mime: Some(true),
+                get_attributes: Some(true),
+                get_checksum: Some(true),
+                checksum_algorithim: Some("sha1".to_string()),
+                ..ModuleArgs::default()
+            };
+            false
+        },
+    };
+    return args;
+}
+
+// TODO: move to lib, using phf to create constant/static hashmap
 static FILE_ATTRIBUTES: phf::Map<&'static str, &'static str> = phf_map! {
     "A" => "noatime",
     "a" => "append",
@@ -107,7 +127,7 @@ static FILE_ATTRIBUTES: phf::Map<&'static str, &'static str> = phf_map! {
 struct StatResult {
 
     // common, move to macro
-    pub msg: String,
+    pub msg: Option<String>,
     pub changed: bool,
     pub failed: bool,
     pub traceback: Option<String>,
@@ -163,9 +183,9 @@ struct StatResult {
 
 impl StatResult { // TODO: move to AnsibleResult trait
 
-    fn exit_json(&mut self, msg: String) {
+    fn exit_json(&mut self, msg: Option<String>) {
         self.return_result(msg);
-        process::exit(0);
+        process::exit(exitcode::OK);
     }
 
     fn fail_json(&mut self, msg: String) {
@@ -174,11 +194,11 @@ impl StatResult { // TODO: move to AnsibleResult trait
         if self.failed.not() {
             self.failed = true;
         }
-        self.return_result(msg);
+        self.return_result(Some(msg));
         process::exit(1);
     }
 
-    fn return_result(&mut self, msg: String) {
+    fn return_result(&mut self, msg: Option<String>) {
         self.msg = msg;
         println!("{}", serde_json::to_string(&self).unwrap());
     }
@@ -191,30 +211,50 @@ impl StatResult { // TODO: move to AnsibleResult trait
 	}
 }
 
+fn get_file_mime(path: &Path) -> (Option<String>, Option<String>) {
+
+    let output = Command::new("file")
+        .args(["--mime-type", "--mime-encoding", path.to_str().unwrap()])
+        .output()
+        .expect("failed to execute process");
+
+    let mime_string = std::str::from_utf8(&output.stdout)
+        .unwrap()
+        .split(':')
+        .last()
+        .unwrap()
+        .to_string();
+
+    let mime_info: Vec<&str> = mime_string
+        .split(';')
+        .map(|x| x.trim())
+        .collect();
+
+    if mime_info.len() == 2 {
+        return (
+            Some(mime_info[0].to_string()),
+            Some(mime_info[1]
+                .strip_prefix("charset=")
+                .expect("Missing expected string pattern")
+                .to_string()
+            )
+        );
+    }else {
+        //return Err(format!("Invalid mime information returned: {:?}", mime_info));
+        eprintln!("Invalid mime information returned: {:?}", mime_info);
+        return (Some("".to_string()), Some("".to_string()));
+    }
+}
+
 // TODO handle unix, windows and find out what 'wasi' is, below works for Mac/Linux
 // TODO: handle all errors so we can use next line
 // fn main() -> StatResult {
 fn main() {
 
-    // TODO: read from params
-    let path = Path::new("/etc/hosts");
-    //let path = Path::new("/home/bcoca/testing123");
-    //let path = Path::new("/nofile");
-    let follow = true;
-    //let follow = false;
-    let get_mime = true;
-    //let get_mime = false;
-    let get_attributes = true;
-    //let attributes = false;
-    let get_checksum = true;
-    //let get_checksum = false;
-    //let checksum_algorithim = "SHA1";
-    let checksum_algorithim = "md5";
-    //let checksum_algorithim = "sha1";
-
     // Initialize result
     let mut sr = StatResult{
-        path : format!("{:?}", path),
+        //path : format!("{:?}", path),
+        path : String::from(""),
         changed : false,
         failed : false,
         exists: false,
@@ -222,20 +262,26 @@ fn main() {
         ..StatResult::default()
     };
 
-    // setup path error handler
-    let bad_path = |e| {sr.fail_json(format!("Cannot stat path ({:?}): {}", path, e)); return false;};
+    // Get inputs
+    let args: Vec<String> = env::args().collect();
+    let args_file = Path::new(&args[1]);
+    let m = args_from_file(args_file);
+
+    let path = Path::new(&m.path);
+    sr.path = String::from_str(path.to_str().unwrap()).unwrap();
 
     // Check if path exists, error if permissions issue
+    let bad_path = |e| {sr.fail_json(format!("Cannot stat path ({:?}): {}", path, e)); return false;};
     sr.exists = path.try_exists().unwrap_or_else(bad_path);
 
     // return now if no path, no other info will be available
     if sr.exists.not() {
-        sr.exit_json(format!("Path ({:?}) does not exist.", path));
+        sr.exit_json(Some(format!("Path ({:?}) does not exist.", path)));
     }
 
     // now get info about path/link
     sr.islnk = path.is_symlink();
-    let stats = if sr.islnk.not() || follow {
+    let stats = if sr.islnk.not() || m.follow.unwrap() {
             path.metadata().unwrap()
         } else {
             path.symlink_metadata().unwrap()
@@ -244,8 +290,7 @@ fn main() {
     //TODO debug
     // eprintln!("{:?}", stats);
 
-// Metadata { file_type: FileType { is_file: true, is_dir: false, is_symlink: false, .. }, permissions: Permissions(FilePermissions { mode: 0o100644 (-rw-r--r--) }), len: 71, modified: SystemTime { tv_sec: 1694268711, tv_nsec: 457442806 }, accessed: SystemTime { tv_sec: 1678297151, tv_nsec: 0 }, created: SystemTime { tv_sec: 1694268703, tv_nsec: 85442750 }, .. }
-
+    // TODO: sr.update_from_stats(stats)
     // sr.ischr
     // sr.isblk
     // sr.isreg
@@ -255,7 +300,7 @@ fn main() {
     // sr.readable
     // etc
 
-	// TODO: fix to match python output
+	// TODO: fix times to match python output
     sr.atime = Some(stats
         .accessed()
         .unwrap()
@@ -265,27 +310,24 @@ fn main() {
         .to_string()
     );
     sr.ctime = Some(stats.created().unwrap().elapsed().expect("Invalid duration").as_secs().to_string());
-	sr.isdir = Some(stats.is_dir());
-    sr.mode = Some(format!("{:#o}", stats.permissions().mode()));
-    // let fullmode =format!("{:#o}", stats.permissions().mode()).chars().into_iter();
-    // let head = String::from_iter(fullmode);
-    // let bottom: String = fullmode.clone().take(4).collect();
-    // eprintln!("{:?} {:?}", head, bottom);
-    // sr.mode = Some(bottom);
     sr.mtime = Some(stats.modified().unwrap().elapsed().expect("Invalid duration").as_secs().to_string());
 
+	sr.isdir = Some(stats.is_dir());
+    //TODO: cut to last 4 chars, use first 4 for other stat info
+    sr.mode = Some(format!("{:#o}", stats.permissions().mode()));
     sr.size = Some(stats.len());
 
-    if get_checksum {
+    if m.get_checksum.expect("Invalid boolean for get_checksum") {
         sr.checksum = Some(
                 hash_file(path,
-                Algorithm::from_str(checksum_algorithim).expect("Invalid Algorithim")
+                Algorithm::from_str(&m.checksum_algorithim.unwrap()).expect("Invalid Algorithim")
             )
             .to_lowercase()
         );
     }
 
-	if get_attributes {
+	if m.get_attributes.expect("Invalid boolean for get_attributes") {
+        // TODO: (sr.version , sr.attr_flags) = get_file_attributes(path);
 		let output = Command::new("lsattr")
 			.args(["-vd", path.to_str().unwrap()])
 			.output()
@@ -300,35 +342,9 @@ fn main() {
 	}
 
     // get mimetype and charset
-    if get_mime {
-		let output = Command::new("file")
-			.args(["--mime-type", "--mime-encoding", path.to_str().unwrap()])
-			.output()
-			.expect("failed to execute process");
-
-        let mime_string = std::str::from_utf8(&output.stdout)
-            .unwrap()
-            .split(':')
-            .last()
-            .unwrap()
-            .to_string();
-
-        let mime_info: Vec<&str> = mime_string
-            .split(';')
-            .map(|x| x.trim())
-            .collect();
-
-        if mime_info.len() == 2 {
-		    sr.mimetype = Some(mime_info[0].to_string());
-		    sr.charset = Some(mime_info[1]
-                .strip_prefix("charset=")
-                .expect("Missing expected string pattern")
-                .to_string()
-            );
-		    // sr.charset = Some(mime_info[1].split('=').last().unwrap().to_string());
-        }
+    if m.get_mime.expect("Invalid boolean for get_mime") {
+        (sr.mimetype, sr.charset) = get_file_mime(path);
     }
 
-    sr.exit_json("".to_string());
-    //sr.exit_json(format!("{:?}", stats));
+    sr.exit_json(None);
 }

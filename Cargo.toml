@@ -5,6 +5,10 @@ edition = "2021"
 
 [dependencies]
 checksums = "0.9.1"
+exitcode = "1.1.2"
 phf = {version = "0.11.3", features = ["macros"]}
 serde = {version = "1.0", features = ["derive"]}
 serde_json = {version = "1.0", features = ["preserve_order"]}
+
+[profile.release]
+panic = 'abort'
