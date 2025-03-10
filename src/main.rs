@@ -1,10 +1,12 @@
 /// Returns stat and other info about a file
+extern crate chrono;
 extern crate exitcode;
 
 use checksums::{Algorithm, hash_file};
+use chrono::Local;
+use filetime::FileTime;
 use phf::phf_map;
 use serde::{Serialize, Deserialize};
-
 use std::collections::HashSet;
 use std::env;
 use std::os::unix::fs::PermissionsExt;
@@ -14,11 +16,14 @@ use std::process;
 use std::process::Command;
 use std::str::FromStr;
 
+const DATE_FORMAT_STR: &'static str = "%Y-%m-%d  %H:%M:%S";
+
+
+
 // TODO: datetime
 // extern crate chrono;
 // use chrono::prelude::DateTime;
 // use chrono::Utc;
-// use std::time::{SystemTime, UNIX_EPOCH, Duration};
 //
 // fn main(){
 //     // Creates a new SystemTime from the specified number of whole seconds
@@ -53,7 +58,7 @@ struct ModuleArgs {
     checksum_algorithim: Option<String>,
 }
 
-// TODO: move to lib
+// TODO: move to lib/Ansible::ModuleArgs
 fn args_from_file(path: &Path) -> ModuleArgs {
 
     let args: ModuleArgs;
@@ -113,11 +118,13 @@ static FILE_ATTRIBUTES: phf::Map<&'static str, &'static str> = phf_map! {
     "Z" => "compresseddirty",
 };
 
-#[derive(Serialize, Debug, Default)] // TODO: gen from AnsibleResult macro
+#[derive(Serialize, Debug, Default)] // TODO: gen from Ansible::ModuleResult macro
 struct StatResult {
 
     // common, move to macro
     warnings: HashSet<String>,
+    deprecations: HashSet<String>,
+    debug: bool,
 
     pub msg: Option<String>,
     pub changed: bool,
@@ -176,8 +183,16 @@ struct StatResult {
 // TODO: move common methods to AnsibleResult trait/macro
 impl StatResult {
 
+    // TODO:: add deprecations + log
     fn warn(&mut self, warning: String) {
-            self.warnings.insert(warning);
+        eprintln!("[WARNING] {}", warning);
+        self.warnings.insert(warning);
+    }
+
+    fn debug(&self, debug: String) {
+        if self.debug {
+            eprintln!("[DEBUG] stat (pid:{:?}) [{}]: {:?}", process::id(), Local::now().format(DATE_FORMAT_STR).to_string(), debug);
+        }
     }
 
     fn exit_json(&mut self, msg: Option<String>) {
@@ -187,7 +202,7 @@ impl StatResult {
 
     fn fail_json(&mut self, msg: String) {
         // TODO: populate traceback?
-        eprintln!("{:?}", msg);
+        self.debug(format!("{:?}", msg));
         if self.failed.not() {
             self.failed = true;
         }
@@ -250,7 +265,7 @@ impl StatResult {
             .unwrap()
             .split_whitespace()
             .collect();
-        if res.len() == 2 {
+        if res.len() == 3 {
 		    self.version = Some(res[0].to_string());
 		    self.attr_flags = Some(res[1].trim_matches('-').to_string());
 		    self.format_attributes();
@@ -272,6 +287,8 @@ fn main() {
         failed : false,
         exists: false,
         warnings: HashSet::new(),
+        deprecations: HashSet::new(),
+        debug: true,
         ..StatResult::default()
     };
 
@@ -313,7 +330,7 @@ fn main() {
     let stats = path.symlink_metadata().unwrap();
 
     //TODO debug
-    eprintln!("{:?}", stats);
+    sr.debug(format!("{:?}", stats));
     // TODO: move to an sr.update_from_stats(stats)
 
     // extended file data
@@ -343,16 +360,12 @@ fn main() {
     // xusr
 
 	// TODO: fix times to match python output
-    sr.atime = Some(stats
-        .accessed()
-        .unwrap()
-        .elapsed()
-        .expect("Invalid duration")
-        .as_secs()
-        .to_string()
-    );
-    sr.ctime = Some(stats.created().unwrap().elapsed().expect("Invalid duration").as_secs().to_string());
-    sr.mtime = Some(stats.modified().unwrap().elapsed().expect("Invalid duration").as_secs().to_string());
+    let atime = FileTime::from_last_access_time(&stats);
+    sr.atime = Some(format!("{:?}.{:?}", atime.unix_seconds(), atime.nanoseconds()));
+    let ctime = FileTime::from_creation_time(&stats).unwrap();
+    sr.ctime = Some(format!("{:?}.{:?}", ctime.unix_seconds(), ctime.nanoseconds()));
+    let mtime = FileTime::from_last_modification_time(&stats);
+    sr.mtime = Some(format!("{:?}.{:?}", mtime.unix_seconds(), mtime.nanoseconds()));
 
 	sr.isdir = Some(stats.is_dir());
     //TODO: cut to last 4 chars, use first 4 for other stat info
