@@ -4,25 +4,15 @@ extern crate exitcode;
 use checksums::{Algorithm, hash_file};
 use phf::phf_map;
 use serde::{Serialize, Deserialize};
-// use serde_json;
-// use std::fs;
-// use std::os::linux::fs::MetadataExt as LinuxMetadata;
-// use std::os::unix::fs::MetadataExt as Metadata;
+
+use std::collections::HashSet;
 use std::env;
 use std::os::unix::fs::PermissionsExt;
 use std::ops::Not;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::process::Command;
 use std::str::FromStr;
-
-// TODO: move this to external lib (ansible_module)
-
-// trait AnsibleResult {
-//     msg: String,
-//     changed: bool,
-//     failed: bool,
-// }
 
 // TODO: datetime
 // extern crate chrono;
@@ -40,7 +30,7 @@ use std::str::FromStr;
 //     println!{"{}",timestamp_str};
 // }
 
-// cause serde cannot currently use bools for default
+// TODO: try to get serde to set defaults
 // fn True(){return Some(true);}
 // fn False(){return Some(false);}
 // fn sha1(){return Some("sha1");}
@@ -123,10 +113,12 @@ static FILE_ATTRIBUTES: phf::Map<&'static str, &'static str> = phf_map! {
     "Z" => "compresseddirty",
 };
 
-#[derive(Serialize, Debug, Default)] // TODO: move to AnsibleResult macro
+#[derive(Serialize, Debug, Default)] // TODO: gen from AnsibleResult macro
 struct StatResult {
 
     // common, move to macro
+    warnings: HashSet<String>,
+
     pub msg: Option<String>,
     pub changed: bool,
     pub failed: bool,
@@ -136,52 +128,57 @@ struct StatResult {
     pub atime: Option<String>,
     pub attr_flags: Option<String>,
     pub attributes: Vec<String>,
-    // block_size
-    // blocks
+    pub block_size: Option<u64>,
+    pub blocks: Option<u32>,
     pub charset: Option<String>,
     pub checksum: Option<String>,
     pub ctime: Option<String>,
-    // dev
-    // device_type
-    // executable
+    pub dev: Option<u32>,
+    pub device_type: Option<u32>,
+    pub executable: Option<bool>,
     pub exists: bool,
     pub gid: Option<u32>,
     pub gr_name: Option<String>,
-    // inode
+    pub inode: Option<u64>,
     pub isblk: Option<bool>,
     pub ischr: Option<bool>,
     pub isdir: Option<bool>,
     pub isfifo: Option<bool>,
-    // isgid
-    pub islnk: bool,
+    pub isgid: Option<bool>,
+    pub islnk: Option<bool>,
     pub isreg: Option<bool>,
-    // issock
-    // isuid
+    pub issock: Option<bool>,
+    pub isuid: Option<bool>,
     pub lnk_source: Option<String>,
-    pub lnk_target: Option<String>, // TODO: use Path?
+    pub lnk_target: Option<String>, // NOTE: use Path/Display?
     pub mimetype: Option<String>,
     pub mode: Option<String>,
     pub mtime: Option<String>,
-    // nlink
-    pub path: String, // use Display?
-    // pw_name
+    pub nlink: Option<u32>,
+    pub path: String, // NOTE: use Path/Display?
+    pub pw_name: Option<String>,
     pub readable: Option<bool>,
-    // rgrp
-    // roth
-    // rusr
+    pub rgrp: Option<bool>,
+    pub roth: Option<bool>,
+    pub rusr: Option<bool>,
     pub size: Option<u64>,
     pub uid: Option<u32>,
     pub version: Option<String>,
-    // wgrp
-    // woth
-    // writeable
-    // wusr
-    // xgrp
-    // xoth
-    // xusr
+    pub wgrp: Option<bool>,
+    pub woth: Option<bool>,
+    pub writable: Option<bool>,
+    pub wusr: Option<bool>,
+    pub xgrp: Option<bool>,
+    pub xoth: Option<bool>,
+    pub xusr: Option<bool>,
 }
 
-impl StatResult { // TODO: move to AnsibleResult trait
+// TODO: move common methods to AnsibleResult trait/macro
+impl StatResult {
+
+    fn warn(&mut self, warning: String) {
+            self.warnings.insert(warning);
+    }
 
     fn exit_json(&mut self, msg: Option<String>) {
         self.return_result(msg);
@@ -203,62 +200,78 @@ impl StatResult { // TODO: move to AnsibleResult trait
         println!("{}", serde_json::to_string(&self).unwrap());
     }
 
+// LOCAL
+
 	fn format_attributes(&mut self) {
+    // Set 'list of attribute strings' from attibute flags
 		self.attributes = Vec::new();
 		for flag in self.attr_flags.clone().unwrap().chars() {
 		    self.attributes.push(FILE_ATTRIBUTES[flag.to_string().as_str()].to_string());
         }
 	}
-}
 
-fn get_file_mime(path: &Path) -> (Option<String>, Option<String>) {
+    fn set_mime_info(&mut self, path: &Path) {
 
-    let output = Command::new("file")
-        .args(["--mime-type", "--mime-encoding", path.to_str().unwrap()])
-        .output()
-        .expect("failed to execute process");
+        let output = Command::new("file")
+            .args(["--mime-type", "--mime-encoding", path.to_str().unwrap()])
+            .output()
+            .expect("failed to execute process");
 
-    let mime_string = std::str::from_utf8(&output.stdout)
-        .unwrap()
-        .split(':')
-        .last()
-        .unwrap()
-        .to_string();
+        let mime_string = std::str::from_utf8(&output.stdout)
+            .unwrap()
+            .split(':')
+            .last()
+            .unwrap()
+            .to_string();
 
-    let mime_info: Vec<&str> = mime_string
-        .split(';')
-        .map(|x| x.trim())
-        .collect();
+        let mime_info: Vec<&str> = mime_string
+            .split(';')
+            .map(|x| x.trim())
+            .collect();
 
-    if mime_info.len() == 2 {
-        return (
-            Some(mime_info[0].to_string()),
-            Some(mime_info[1]
+        if mime_info.len() == 2 {
+            self.mimetype = Some(mime_info[0].to_string());
+            self.charset = Some(mime_info[1]
                 .strip_prefix("charset=")
                 .expect("Missing expected string pattern")
                 .to_string()
-            )
-        );
-    }else {
-        //return Err(format!("Invalid mime information returned: {:?}", mime_info));
-        eprintln!("Invalid mime information returned: {:?}", mime_info);
-        return (Some("".to_string()), Some("".to_string()));
+            );
+        }else {
+            self.warn(format!("Skipping mime info, invalid mime information: {:?}", mime_info));
+        }
+    }
+
+    fn set_file_attr(&mut self, path: &Path) {
+		let output = Command::new("lsattr")
+			.args(["-vd", path.to_str().unwrap()])
+			.output()
+			.expect("failed to execute process");
+		let res: Vec<&str> = std::str::from_utf8(&output.stdout)
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        if res.len() == 2 {
+		    self.version = Some(res[0].to_string());
+		    self.attr_flags = Some(res[1].trim_matches('-').to_string());
+		    self.format_attributes();
+        } else {
+            self.warn(format!("Skipping attr info, unexpected lsattr output: {:?}", res));
+        }
     }
 }
-
 // TODO handle unix, windows and find out what 'wasi' is, below works for Mac/Linux
 // TODO: handle all errors so we can use next line
 // fn main() -> StatResult {
 fn main() {
 
-    // Initialize result
+    // Initialize result, TODO: move to new/init/default func in struct
     let mut sr = StatResult{
         //path : format!("{:?}", path),
         path : String::from(""),
         changed : false,
         failed : false,
         exists: false,
-        islnk: false,
+        warnings: HashSet::new(),
         ..StatResult::default()
     };
 
@@ -267,8 +280,25 @@ fn main() {
     let args_file = Path::new(&args[1]);
     let m = args_from_file(args_file);
 
-    let path = Path::new(&m.path);
+    // Handle symlink
+    let pb: PathBuf;
+    let mut path = Path::new(&m.path);
     sr.path = String::from_str(path.to_str().unwrap()).unwrap();
+    if path.is_symlink() {
+        pb = path.read_link().expect("Could not follow symlink"); //NOTE: resolve recursively? check py version
+        sr.lnk_target = Some(format!("{:?}", pb));
+        if pb.is_relative() {
+            sr.lnk_source = Some(format!("{:?}", pb.canonicalize().unwrap()));
+        } else {
+            sr.lnk_source = sr.lnk_target.clone();
+        }
+
+        // resolve symlink for rest of info if 'follow'
+        if m.follow.unwrap() {
+            path = pb.as_path();
+        }
+    }
+    sr.islnk = Some(path.is_symlink());
 
     // Check if path exists, error if permissions issue
     let bad_path = |e| {sr.fail_json(format!("Cannot stat path ({:?}): {}", path, e)); return false;};
@@ -279,26 +309,38 @@ fn main() {
         sr.exit_json(Some(format!("Path ({:?}) does not exist.", path)));
     }
 
-    // now get info about path/link
-    sr.islnk = path.is_symlink();
-    let stats = if sr.islnk.not() || m.follow.unwrap() {
-            path.metadata().unwrap()
-        } else {
-            path.symlink_metadata().unwrap()
-        };
+    // now get info about path/link, using symlink cause its more complete in case we didn't 'follow' above.
+    let stats = path.symlink_metadata().unwrap();
 
     //TODO debug
-    // eprintln!("{:?}", stats);
+    eprintln!("{:?}", stats);
+    // TODO: move to an sr.update_from_stats(stats)
 
-    // TODO: sr.update_from_stats(stats)
+    // extended file data
     // sr.ischr
     // sr.isblk
     // sr.isreg
     // sr.isfifo
+    // nlink
+    // blocks
+    // block_size
+
 	// sr.uid = 
 	// sr.gid = 
+
+
+    // user perms
     // sr.readable
-    // etc
+    // sr.writable
+    // rgrp
+    // roth
+    // rusr
+    // wgrp
+    // woth
+    // wusr
+    // xgrp
+    // xoth
+    // xusr
 
 	// TODO: fix times to match python output
     sr.atime = Some(stats
@@ -327,23 +369,12 @@ fn main() {
     }
 
 	if m.get_attributes.expect("Invalid boolean for get_attributes") {
-        // TODO: (sr.version , sr.attr_flags) = get_file_attributes(path);
-		let output = Command::new("lsattr")
-			.args(["-vd", path.to_str().unwrap()])
-			.output()
-			.expect("failed to execute process");
-		let res: Vec<&str> = std::str::from_utf8(&output.stdout)
-            .unwrap()
-            .split_whitespace()
-            .collect();
-		sr.version = Some(res[0].to_string());
-		sr.attr_flags = Some(res[1].trim_matches('-').to_string());
-		sr.format_attributes();
+        sr.set_file_attr(path);
 	}
 
     // get mimetype and charset
     if m.get_mime.expect("Invalid boolean for get_mime") {
-        (sr.mimetype, sr.charset) = get_file_mime(path);
+        sr.set_mime_info(path);
     }
 
     sr.exit_json(None);
