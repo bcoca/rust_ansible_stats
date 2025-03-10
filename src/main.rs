@@ -9,31 +9,17 @@ use phf::phf_map;
 use serde::{Serialize, Deserialize};
 use std::collections::HashSet;
 use std::env;
-use std::os::unix::fs::PermissionsExt;
+use std::os::linux::fs::MetadataExt; // TODO: mac/win?
+//use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+use std::os::unix::fs::FileTypeExt;
 use std::ops::Not;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::process::Command;
 use std::str::FromStr;
+use users::{get_user_by_uid, get_group_by_gid, get_effective_uid, get_effective_gid, Users, Groups}; //get_effective?
 
 const DATE_FORMAT_STR: &'static str = "%Y-%m-%d  %H:%M:%S";
-
-
-
-// TODO: datetime
-// extern crate chrono;
-// use chrono::prelude::DateTime;
-// use chrono::Utc;
-//
-// fn main(){
-//     // Creates a new SystemTime from the specified number of whole seconds
-//     let d = UNIX_EPOCH + Duration::from_secs(1524885322);
-//     // Create DateTime from SystemTime
-//     let datetime = DateTime::<Utc>::from(d);
-//     // Formats the combined date and time with the specified format string.
-//     let timestamp_str = datetime.format("%Y-%m-%d %H:%M:%S.%f").to_string();
-//     println!{"{}",timestamp_str};
-// }
 
 // TODO: try to get serde to set defaults
 // fn True(){return Some(true);}
@@ -43,11 +29,10 @@ const DATE_FORMAT_STR: &'static str = "%Y-%m-%d  %H:%M:%S";
 
 // #[serde(deny_unknown_fields)] // TODO: add once 'internal fields' are also added
 #[derive(Deserialize, Default)] // AnsibleModuleArgs macro! (to include all hidden args
-#[allow(dead_code)] // TODO: remove once you read module args
 struct ModuleArgs {
     #[serde(alias = "name", alias = "dest")]
     path: String,
-    follow: Option<bool>,
+
     #[serde(alias = "mime", alias = "mime_type", alias = "mime-type")] //, default = "True")]
     get_mime: Option<bool>,
     #[serde(alias = "attr", alias = "attributes")] //, default = "True")]
@@ -56,9 +41,17 @@ struct ModuleArgs {
     get_checksum: Option<bool>,
     #[serde(alias = "checksum_algo")] //, default = "sha1")]
     checksum_algorithim: Option<String>,
+    follow: Option<bool>,
+    #[serde(alias = "_ansible_debug")]
+
+    debug: bool,
 }
 
 // TODO: move to lib/Ansible::ModuleArgs
+fn debug(debug: String) {
+    eprintln!("[DEBUG] stat (pid:{:?}) [{}]: {:?}", process::id(), Local::now().format(DATE_FORMAT_STR).to_string(), debug);
+}
+
 fn args_from_file(path: &Path) -> ModuleArgs {
 
     let args: ModuleArgs;
@@ -86,6 +79,7 @@ fn args_from_file(path: &Path) -> ModuleArgs {
                 get_attributes: Some(true),
                 get_checksum: Some(true),
                 checksum_algorithim: Some("sha1".to_string()),
+                debug: true,
                 ..ModuleArgs::default()
             };
             false
@@ -124,59 +118,104 @@ struct StatResult {
     // common, move to macro
     warnings: HashSet<String>,
     deprecations: HashSet<String>,
-    debug: bool,
+    // debug: <String>,
 
-    pub msg: Option<String>,
     pub changed: bool,
     pub failed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub msg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub traceback: Option<String>,
 
     // module specific
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub atime: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub attr_flags: Option<String>,
     pub attributes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub block_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub blocks: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub charset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ctime: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dev: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub device_type: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub executable: Option<bool>,
     pub exists: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gr_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub inode: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub isblk: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ischr: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub isdir: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub isfifo: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub isgid: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub islnk: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub isreg: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub issock: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub isuid: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub lnk_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub lnk_target: Option<String>, // NOTE: use Path/Display?
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mimetype: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mtime: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub nlink: Option<u32>,
     pub path: String, // NOTE: use Path/Display?
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pw_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub readable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rgrp: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub roth: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rusr: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub uid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub wgrp: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub woth: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub writable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub wusr: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub xgrp: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub xoth: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub xusr: Option<bool>,
 }
 
@@ -189,12 +228,6 @@ impl StatResult {
         self.warnings.insert(warning);
     }
 
-    fn debug(&self, debug: String) {
-        if self.debug {
-            eprintln!("[DEBUG] stat (pid:{:?}) [{}]: {:?}", process::id(), Local::now().format(DATE_FORMAT_STR).to_string(), debug);
-        }
-    }
-
     fn exit_json(&mut self, msg: Option<String>) {
         self.return_result(msg);
         process::exit(exitcode::OK);
@@ -202,7 +235,7 @@ impl StatResult {
 
     fn fail_json(&mut self, msg: String) {
         // TODO: populate traceback?
-        self.debug(format!("{:?}", msg));
+        debug(format!("{:?}", msg));
         if self.failed.not() {
             self.failed = true;
         }
@@ -230,7 +263,7 @@ impl StatResult {
         let output = Command::new("file")
             .args(["--mime-type", "--mime-encoding", path.to_str().unwrap()])
             .output()
-            .expect("failed to execute process");
+            .expect("failed to execute 'file'");
 
         let mime_string = std::str::from_utf8(&output.stdout)
             .unwrap()
@@ -248,7 +281,7 @@ impl StatResult {
             self.mimetype = Some(mime_info[0].to_string());
             self.charset = Some(mime_info[1]
                 .strip_prefix("charset=")
-                .expect("Missing expected string pattern")
+                .expect("Missing expected string pattern in chareti info")
                 .to_string()
             );
         }else {
@@ -288,7 +321,6 @@ fn main() {
         exists: false,
         warnings: HashSet::new(),
         deprecations: HashSet::new(),
-        debug: true,
         ..StatResult::default()
     };
 
@@ -300,9 +332,10 @@ fn main() {
     // Handle symlink
     let pb: PathBuf;
     let mut path = Path::new(&m.path);
+    // save orig path
     sr.path = String::from_str(path.to_str().unwrap()).unwrap();
     if path.is_symlink() {
-        pb = path.read_link().expect("Could not follow symlink"); //NOTE: resolve recursively? check py version
+        pb = path.read_link().expect("Unable to follow symlink"); //NOTE: resolve recursively? check py version
         sr.lnk_target = Some(format!("{:?}", pb));
         if pb.is_relative() {
             sr.lnk_source = Some(format!("{:?}", pb.canonicalize().unwrap()));
@@ -315,7 +348,6 @@ fn main() {
             path = pb.as_path();
         }
     }
-    sr.islnk = Some(path.is_symlink());
 
     // Check if path exists, error if permissions issue
     let bad_path = |e| {sr.fail_json(format!("Cannot stat path ({:?}): {}", path, e)); return false;};
@@ -328,38 +360,59 @@ fn main() {
 
     // now get info about path/link, using symlink cause its more complete in case we didn't 'follow' above.
     let stats = path.symlink_metadata().unwrap();
+    if m.debug {
+        debug(format!("{:?}", stats));
+    }
 
-    //TODO debug
-    sr.debug(format!("{:?}", stats));
     // TODO: move to an sr.update_from_stats(stats)
+    // file details
+	sr.isdir = Some(stats.is_dir());
+    sr.islnk = Some(path.is_symlink());
+    sr.isreg = Some(stats.is_file());
+
+    // moar deets (Ext)
+    let ft = stats.file_type();
+    sr.isblk = Some(ft.is_block_device());
+    sr.ischr = Some(ft.is_char_device());
+    sr.isfifo = Some(ft.is_fifo());
+    sr.issock = Some(ft.is_socket());
 
     // extended file data
-    // sr.ischr
-    // sr.isblk
-    // sr.isreg
-    // sr.isfifo
-    // nlink
-    // blocks
-    // block_size
+    // sr.blocks =
+    // sr.block_size =
+    // sr.inode =
+    // sr.nlink
+    sr.size = Some(stats.len());
 
-	// sr.uid = 
-	// sr.gid = 
+    // file perms
+    let perms = stats.permissions();
+    //let fullmode sr.mode = format!("{:#o}", perms.mode());
+    // sr.rusr =
+    // sr.wusr =
+    // sr.xusr =
 
+    // sr.rgrp =
+    // sr.wgrp =
+    // sr.xgrp =
 
-    // user perms
-    // sr.readable
-    // sr.writable
-    // rgrp
-    // roth
-    // rusr
-    // wgrp
-    // woth
-    // wusr
-    // xgrp
-    // xoth
-    // xusr
+    // sr.roth =
+    // sr.woth =
+    // sr.xoth =
+    // sr.mode = Some(format!"{sr.rusr}{sr.wusr}{sr.xusr}{sr.rgrp}{sr.wgrp}{sr.xgrp}{sr.roth}{sr.woth}{sr.xoth}");
 
-	// TODO: fix times to match python output
+    sr.pw_name = Some(format!("{:?}", get_user_by_uid(stats.st_uid()).unwrap().name()));
+    sr.gr_name = Some(format!("{:?}", get_group_by_gid(stats.st_gid()).unwrap().name()));
+
+    // 'my' user/group match?
+	sr.isuid = Some(get_effective_uid() == stats.st_uid());
+	sr.isgid = Some(get_effective_gid() == stats.st_gid());
+
+    // 'my' permissions!
+    // sr.readable =
+    // sr.executable =
+    // sr.writable =
+
+	// Time!!!
     let atime = FileTime::from_last_access_time(&stats);
     sr.atime = Some(format!("{:?}.{:?}", atime.unix_seconds(), atime.nanoseconds()));
     let ctime = FileTime::from_creation_time(&stats).unwrap();
@@ -367,26 +420,21 @@ fn main() {
     let mtime = FileTime::from_last_modification_time(&stats);
     sr.mtime = Some(format!("{:?}.{:?}", mtime.unix_seconds(), mtime.nanoseconds()));
 
-	sr.isdir = Some(stats.is_dir());
-    //TODO: cut to last 4 chars, use first 4 for other stat info
-    sr.mode = Some(format!("{:#o}", stats.permissions().mode()));
-    sr.size = Some(stats.len());
-
-    if m.get_checksum.expect("Invalid boolean for get_checksum") {
+    if m.get_checksum.expect("get_checksum should be a boolean") {
+        //eprintln!("{:?}", stats.file_type().hash(Algorithm::from_str(&m.checksum_algorithim.unwrap()).expect("Invalid checksum algorithm specified")));
         sr.checksum = Some(
                 hash_file(path,
-                Algorithm::from_str(&m.checksum_algorithim.unwrap()).expect("Invalid Algorithim")
+                Algorithm::from_str(&m.checksum_algorithim.unwrap()).expect("Invalid checksum algorithm specified")
             )
             .to_lowercase()
         );
     }
 
-	if m.get_attributes.expect("Invalid boolean for get_attributes") {
+	if m.get_attributes.expect("get_attributes should be a boolean") {
         sr.set_file_attr(path);
 	}
 
-    // get mimetype and charset
-    if m.get_mime.expect("Invalid boolean for get_mime") {
+    if m.get_mime.expect("get_mime hsould be a boolean") {
         sr.set_mime_info(path);
     }
 
