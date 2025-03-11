@@ -91,10 +91,10 @@ struct ModuleArgs {
 }
 
 impl ModuleArgs {
+    // TODO: also move to 'trait'/common lib
     fn debug(&self, msg: String) {
-        //TODO: remove 'stat' and use 'params.module_name'
         if self.debug {
-            eprintln!("[DEBUG] {} (pid:{:?}) [{}]: {:?}", self.module_name, process::id(), Local::now().format(DATE_FORMAT_STR).to_string(), msg);
+            eprintln!(" [DEBUG] {} (pid:{:?}) [{}]: {:?}", self.module_name, process::id(), Local::now().format(DATE_FORMAT_STR).to_string(), msg);
         }
     }
 }
@@ -279,7 +279,6 @@ impl StatResult {
     fn return_result(&mut self, msg: Option<String>) {
         self.msg = msg;
         println!("{}", serde_json::to_string_pretty(&self).unwrap());
-        // println!("{}", serde_json::to_string(&self).unwrap());
     }
 
 // LOCAL //
@@ -341,7 +340,7 @@ impl StatResult {
         }
     }
 }
-// TODO handle unix, windows and find out what 'wasi' is, below works for Mac/Linux
+// TODO handle unix, mac, linux, windows (no wasi), special cases, below is mostly uniXy
 // TODO: handle all errors so we can use next line
 // fn main() -> StatResult {
 fn main() {
@@ -391,7 +390,7 @@ fn main() {
         sr.exit_json(Some(format!("Path ({:?}) does not exist.", path)));
     }
 
-    // TODO: move to an sr.update_from_stats(stats)
+    // TODO: move to an sr.get_file_stats(path)
     // now get info about path/link, using symlink cause its more complete in case we didn't 'follow' above.
     let stats = path.symlink_metadata().unwrap();
     let stats2: FileStat;
@@ -422,7 +421,7 @@ fn main() {
     sr.nlink = Some(stats2.st_nlink);
     sr.size = Some(stats.len());
 
-    // file perms
+    // file perms TODO: move to stats2
     let fullmode: Vec<char> = format!("{:#o}", stats.permissions().mode()).drain(..).collect();
     sr.rusr = Some(READ.contains(&fullmode[5]));
     sr.wusr = Some(WRITE.contains(&fullmode[5]));
@@ -438,12 +437,11 @@ fn main() {
     sr.pw_name = Some(format!("{:?}", get_user_by_uid(stats.st_uid()).unwrap().name()));
     sr.gr_name = Some(format!("{:?}", get_group_by_gid(stats.st_gid()).unwrap().name()));
 
-    // 'my' user/group match?
+    // 'my' user/group match? shouldn't this be setuid/setgid?
 	sr.isuid = Some(get_effective_uid() == stats.st_uid());
 	sr.isgid = Some(get_effective_gid() == stats.st_gid());
 
     // 'my' permissions!
-    // sr.readable =
     sr.readable = Some(access(path, AccessFlags::R_OK).is_ok());
     sr.executable = Some(access(path, AccessFlags::X_OK).is_ok());
     sr.writable = Some(access(path, AccessFlags::W_OK).is_ok());
