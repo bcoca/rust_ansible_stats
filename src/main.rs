@@ -249,8 +249,8 @@ struct StatResult {
     pub xusr: Option<bool>,
 }
 
-// TODO: move common methods to AnsibleResult trait/macro
 impl StatResult {
+// TODO: move common methods to AnsibleResult trait/macro
 
     // TODO:: add deprecations + log
     fn warn(&mut self, warning: String) {
@@ -278,7 +278,7 @@ impl StatResult {
         println!("{}", serde_json::to_string(&self).unwrap());
     }
 
-// LOCAL
+// LOCAL //
 
 	fn format_attributes(&mut self) {
     // Set 'list of attribute strings' from attibute flags
@@ -311,7 +311,7 @@ impl StatResult {
             self.mimetype = Some(mime_info[0].to_string());
             self.charset = Some(mime_info[1]
                 .strip_prefix("charset=")
-                .expect("Missing expected string pattern in chareti info")
+                .expect("Missing expected string pattern in charset info")
                 .to_string()
             );
         }else {
@@ -323,7 +323,7 @@ impl StatResult {
 		let output = Command::new("lsattr")
 			.args(["-vd", path.to_str().unwrap()])
 			.output()
-			.expect("failed to execute process");
+			.expect("failed to execute lsattr");
 		let res: Vec<&str> = std::str::from_utf8(&output.stdout)
             .unwrap()
             .split_whitespace()
