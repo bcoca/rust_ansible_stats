@@ -466,7 +466,11 @@ fn main() {
     }
 
 	if params.get_attributes {
-        sr.set_file_attr(path);
+        if params.follow || path.is_symlink().not() {
+            sr.set_file_attr(path);
+        } else {
+            sr.warn("Skipping getting attributes as this is not supported on symlinks".to_string());
+        }
 	}
 
     if params.get_mime {
