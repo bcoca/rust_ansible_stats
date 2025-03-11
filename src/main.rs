@@ -278,7 +278,8 @@ impl StatResult {
 
     fn return_result(&mut self, msg: Option<String>) {
         self.msg = msg;
-        println!("{}", serde_json::to_string(&self).unwrap());
+        println!("{}", serde_json::to_string_pretty(&self).unwrap());
+        // println!("{}", serde_json::to_string(&self).unwrap());
     }
 
 // LOCAL //
@@ -363,23 +364,22 @@ fn main() {
     let params = args_from_file(args_file);
 
     // Handle symlink
-    let pb: PathBuf;
+    let mut pb: PathBuf;
     let mut path = Path::new(&params.path);
     // save orig path
     sr.path = String::from_str(path.to_str().unwrap()).unwrap();
     if path.is_symlink() {
         pb = path.read_link().expect("Unable to follow symlink"); //NOTE: resolve recursively? check py version
         sr.lnk_target = Some(format!("{:?}", pb));
-        if pb.is_relative() {
-            sr.lnk_source = Some(format!("{:?}", pb.canonicalize().unwrap()));
-        } else {
-            sr.lnk_source = sr.lnk_target.clone();
-        }
-
-        // resolve symlink for rest of info if 'follow'
         if params.follow {
             path = pb.as_path();
+            // resolve symlink chain for rest of info if 'follow'
+            while path.is_symlink() {
+                pb = path.read_link().expect("Unable to follow symlink");
+                path = pb.as_path();
+            }
         }
+        sr.lnk_source = Some(format!("{:?}", pb.canonicalize().unwrap()));
     }
 
     // Check if path exists, error if permissions issue
