@@ -26,34 +26,70 @@ const EXEC: [char;4] = ['1','3','5','7'];
 const WRITE: [char; 4] = ['2','3','6','7'];
 const READ: [char; 4] = ['4','5','6','7'];
 
-// TODO: try to get serde to set defaults
-// fn True(){return Some(true);}
-// fn False(){return Some(false);}
-// fn sha1(){return Some("sha1");}
+fn d_true() -> bool {return true;}
+fn d_false() -> bool {return false;}
+fn d_sha1() -> String {return "sha1".to_string();}
+// fn d_selinux_fs() -> Vec<str> {return vec!["fuse", "nfs", "vboxsf", "ramfs", "9p", "vfat"];}
+fn d_shell() -> String {return "/bin/sh".to_string();}
+fn d_syslog_facility() -> String {return "INFO".to_string();}
+fn d_v() -> u32 {return 0;}
+fn d_version() -> String {return "0.0".to_string();}
 
-
-// #[serde(deny_unknown_fields)] // TODO: add once 'internal fields' are also added
 #[derive(Deserialize, Default)] // AnsibleModuleArgs macro! (to include all hidden args
+#[allow(dead_code)]
 struct ModuleArgs {
+    // ocmmon
+    #[serde(alias = "_ansible_check_mode", default = "d_false")]
+    check_mode: bool,
+    #[serde(alias = "_ansible_debug", default = "d_false")]
+    debug: bool,
+    #[serde(alias = "_ansible_diff", default = "d_false")]
+    diff: bool,
+    #[serde(alias = "_ansible_keep_remote_files", default = "d_false")]
+    keep_remote_files: bool,
+    #[serde(alias = "_ansible_ignore_unknown_opts", default = "d_false")]
+    ignore_unknown_opts: bool, // normally use #[serde(deny_unknown_fields)] but we want this at runtime?
+    #[serde(alias = "_ansible_module_name")]
+    module_name: String,
+    #[serde(alias = "_ansible_no_log", default = "d_false")]
+    no_log: bool,
+    #[serde(alias = "_ansible_remote_tmp")]
+    remote_tmp: Option<String>,
+    #[serde(alias = "_ansible_target_log_info")]
+    target_log_info: Option<String>,
+//    #[serde(alias = "_ansible_selinux_special_fs", default = "d_selinux_fs")]
+//    selinux_special_fs: Vec<str>,
+    #[serde(alias = "_ansible_shell_executable", default = "d_shell")]
+    shell_executable: String,
+    #[serde(alias = "_ansible_socket_path")]
+    socket: Option<String>,
+    #[serde(alias = "_ansible_syslog_facility", default = "d_syslog_facility")]
+    syslog_facility: String,
+    #[serde(alias = "_ansible_tmpdir")]
+    tmpdir: Option<String>,
+    #[serde(alias = "_ansible_verbosity", default = "d_v")]
+    verbosity: u32,
+    #[serde(alias = "_ansible_version", default = "d_version")]
+    version: String,
+
+    // Local/Module specific
     #[serde(alias = "name", alias = "dest")]
     path: String,
-
-    #[serde(alias = "mime", alias = "mime_type", alias = "mime-type")] //, default = "True")]
-    get_mime: Option<bool>,
-    #[serde(alias = "attr", alias = "attributes")] //, default = "True")]
-    get_attributes: Option<bool>,
-    #[serde(alias = "checksum")] //, default = "True")]
-    get_checksum: Option<bool>,
-    #[serde(alias = "checksum_algo")] //, default = "sha1")]
-    checksum_algorithim: Option<String>,
     follow: Option<bool>,
-    #[serde(alias = "_ansible_debug")]
 
-    debug: bool,
+    #[serde(alias = "checksum_algo", default = "d_sha1")]
+    checksum_algorithim: String,
+    #[serde(alias = "attr", alias = "attributes", default = "d_true")]
+    get_attributes: bool,
+    #[serde(alias = "checksum", default = "d_true")]
+    get_checksum: bool,
+    #[serde(alias = "mime", alias = "mime_type", alias = "mime-type", default = "d_true")]
+    get_mime: bool,
 }
 
 // TODO: move to lib/Ansible::ModuleArgs
 fn debug(debug: String) {
+    //TODO: remove 'stat' and use 'm.module_name'
     eprintln!("[DEBUG] stat (pid:{:?}) [{}]: {:?}", process::id(), Local::now().format(DATE_FORMAT_STR).to_string(), debug);
 }
 
@@ -73,21 +109,7 @@ fn args_from_file(path: &Path) -> ModuleArgs {
         },
         Err(e) => {
             // TODO: fail_json/raise error?
-            // panic!("Cannot access args: {:?}", e);
-            eprintln!("Cannot access args: {:?}", e);
-            args = ModuleArgs {
-                path:  String::from("/etc/hosts"),
-                //path = String::from("/home/bcoca/testing123"),
-                //path = String::from("/nofile"),
-                follow: Some(true),
-                get_mime: Some(true),
-                get_attributes: Some(true),
-                get_checksum: Some(true),
-                checksum_algorithim: Some("sha1".to_string()),
-                debug: true,
-                ..ModuleArgs::default()
-            };
-            false
+            panic!("Cannot access args: {:?}", e);
         },
     };
     return args;
@@ -422,21 +444,21 @@ fn main() {
     let mtime = FileTime::from_last_modification_time(&stats);
     sr.mtime = Some(format!("{:?}.{:?}", mtime.unix_seconds(), mtime.nanoseconds()));
 
-    if m.get_checksum.expect("get_checksum should be a boolean") {
+    if m.get_checksum {
         //eprintln!("{:?}", stats.file_type().hash(Algorithm::from_str(&m.checksum_algorithim.unwrap()).expect("Invalid checksum algorithm specified")));
         sr.checksum = Some(
                 hash_file(path,
-                Algorithm::from_str(&m.checksum_algorithim.unwrap()).expect("Invalid checksum algorithm specified")
+                Algorithm::from_str(&m.checksum_algorithim).unwrap()
             )
             .to_lowercase()
         );
     }
 
-	if m.get_attributes.expect("get_attributes should be a boolean") {
+	if m.get_attributes {
         sr.set_file_attr(path);
 	}
 
-    if m.get_mime.expect("get_mime hsould be a boolean") {
+    if m.get_mime {
         sr.set_mime_info(path);
     }
 
