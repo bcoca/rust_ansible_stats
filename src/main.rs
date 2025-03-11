@@ -23,11 +23,13 @@ use users::{get_user_by_uid, get_group_by_gid, get_effective_uid, get_effective_
 // used for debug stamp
 const DATE_FORMAT_STR: &'static str = "%Y-%m-%d  %H:%M:%S";
 
-// used to get unix perms
+// used to get unix perms (NOTE: move to file common with FA?)
+// used to compare unix access
 const EXEC: [char;4] = ['1','3','5','7'];
-const WRITE: [char; 4] = ['2','3','6','7'];
-const READ: [char; 4] = ['4','5','6','7'];
+const WRITE: [char;4] = ['2','3','6','7'];
+const READ: [char;4] = ['4','5','6','7'];
 
+// TODO: move to common lib
 fn d_true() -> bool {return true;}
 fn d_false() -> bool {return false;}
 fn d_sha1() -> String {return "sha1".to_string();}
@@ -37,7 +39,7 @@ fn d_syslog_facility() -> String {return "INFO".to_string();}
 fn d_v() -> u32 {return 0;}
 fn d_version() -> String {return "0.0".to_string();}
 
-#[derive(Deserialize, Default)] // AnsibleModuleArgs macro! (to include all hidden args
+#[derive(Deserialize, Default)] // AnsibleModuleArgs macro!
 #[allow(dead_code)]
 struct ModuleArgs {
     // ocmmon
@@ -97,28 +99,21 @@ impl ModuleArgs {
             eprintln!(" [DEBUG] {} (pid:{:?}) [{}]: {:?}", self.module_name, process::id(), Local::now().format(DATE_FORMAT_STR).to_string(), msg);
         }
     }
-}
 
-fn args_from_file(path: &Path) -> ModuleArgs {
+    fn from_argsfile(path: &Path) -> ModuleArgs {
 
-    let args: ModuleArgs;
-    let exists = path.try_exists();
-    match exists {
-        Ok(x) => {
-            if x {
-                let file_contents =  std::fs::read_to_string(path).unwrap();
-                args = serde_json::from_str(&file_contents).expect("Invalid JSON args file for this module.");
-            } else {
-                panic!("Module arguments file provided ({:?}) is not accessible or does not exist!", path);
-            }
-            x
-        },
-        Err(e) => {
-            // TODO: fail_json/raise error?
-            panic!("Cannot access args: {:?}", e);
-        },
-    };
-    return args;
+        let file_contents =  std::fs::read_to_string(path);
+        match file_contents {
+            Ok(x) => {
+                    let args: ModuleArgs = serde_json::from_str(&x).expect("Invalid JSON args file for this module.");
+                    return args
+            },
+            Err(e) => {
+                // TODO: fail_json/raise error?
+                panic!("Unable to parse provided arguments file({:?}): {:?} !", path, e);
+            },
+        };
+    }
 }
 
 // TODO: move to lib, using phf to create constant/static hashmap
@@ -360,7 +355,7 @@ fn main() {
     // Get inputs
     let args: Vec<String> = env::args().collect();
     let args_file = Path::new(&args[1]);
-    let params = args_from_file(args_file);
+    let params = ModuleArgs::from_argsfile(args_file);
 
     // Handle symlink
     let mut pb: PathBuf;
