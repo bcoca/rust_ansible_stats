@@ -105,12 +105,15 @@ impl ModuleArgs {
         let file_contents =  std::fs::read_to_string(path);
         match file_contents {
             Ok(x) => {
-                    let args: ModuleArgs = serde_json::from_str(&x).expect("Invalid JSON args file for this module.");
-                    return args
+                    let args: ModuleArgs = match serde_json::from_str(&x) {
+                        Ok(a) => { a },
+                        Err(e) => {panic!("Unable to parse the provided arguments file ({:?}) as JSON: {:?}", path, e)},
+                    };
+                    return args;
             },
             Err(e) => {
                 // TODO: fail_json/raise error?
-                panic!("Unable to parse provided arguments file({:?}): {:?} !", path, e);
+                panic!("Unable to read the provided arguments file({:?}): {:?} !", path, e);
             },
         };
     }
