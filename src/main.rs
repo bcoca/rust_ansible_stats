@@ -419,7 +419,7 @@ fn main() {
     sr.nlink = Some(stats2.st_nlink);
     sr.size = Some(stats.len());
 
-    // file perms TODO: move to stats2
+    // file perms NOTE: move to stats2?
     let fullmode: Vec<char> = format!("{:#o}", stats.permissions().mode()).drain(..).collect();
     sr.rusr = Some(READ.contains(&fullmode[5]));
     sr.wusr = Some(WRITE.contains(&fullmode[5]));
@@ -435,7 +435,7 @@ fn main() {
     sr.pw_name = Some(format!("{:?}", get_user_by_uid(stats.st_uid()).unwrap().name()));
     sr.gr_name = Some(format!("{:?}", get_group_by_gid(stats.st_gid()).unwrap().name()));
 
-    // 'my' user/group match? shouldn't this be setuid/setgid?
+    // 'my' user/group match? NOTE: shouldn't this be setuid/setgid?
 	sr.isuid = Some(get_effective_uid() == stats.st_uid());
 	sr.isgid = Some(get_effective_gid() == stats.st_gid());
 
