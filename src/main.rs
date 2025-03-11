@@ -5,6 +5,8 @@ extern crate exitcode;
 use checksums::{Algorithm, hash_file};
 use chrono::Local;
 use filetime::FileTime;
+use nix::unistd::{AccessFlags, access};
+use nix::sys::stat::{FileStat,lstat,stat};
 use phf::phf_map;
 use serde::{Serialize, Deserialize};
 use std::collections::HashSet;
@@ -75,7 +77,8 @@ struct ModuleArgs {
     // Local/Module specific
     #[serde(alias = "name", alias = "dest")]
     path: String,
-    follow: Option<bool>,
+    #[serde(default = "d_false")]
+    follow: bool,
 
     #[serde(alias = "checksum_algo", default = "d_sha1")]
     checksum_algorithim: String,
@@ -164,9 +167,9 @@ struct StatResult {
     pub attr_flags: Option<String>,
     pub attributes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub block_size: Option<u64>,
+    pub block_size: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub blocks: Option<u32>,
+    pub blocks: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub charset: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -215,7 +218,7 @@ struct StatResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mtime: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nlink: Option<u32>,
+    pub nlink: Option<u64>,
     pub path: String, // NOTE: use Path/Display?
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pw_name: Option<String>,
@@ -374,7 +377,7 @@ fn main() {
         }
 
         // resolve symlink for rest of info if 'follow'
-        if params.follow.unwrap() {
+        if params.follow {
             path = pb.as_path();
         }
     }
@@ -388,11 +391,18 @@ fn main() {
         sr.exit_json(Some(format!("Path ({:?}) does not exist.", path)));
     }
 
+    // TODO: move to an sr.update_from_stats(stats)
     // now get info about path/link, using symlink cause its more complete in case we didn't 'follow' above.
     let stats = path.symlink_metadata().unwrap();
+    let stats2: FileStat;
+    if params.follow {
+        stats2 = stat(path).unwrap();
+    } else {
+        stats2 = lstat(path).unwrap();
+    }
     params.debug(format!("{:?}", stats));
+    params.debug(format!("{:?}", stats2));
 
-    // TODO: move to an sr.update_from_stats(stats)
     // file details
 	sr.isdir = Some(stats.is_dir());
     sr.islnk = Some(path.is_symlink());
@@ -406,10 +416,10 @@ fn main() {
     sr.issock = Some(ft.is_socket());
 
     // extended file data
-    // sr.blocks =
-    // sr.block_size =
-    // sr.inode =
-    // sr.nlink
+    sr.blocks = Some(stats2.st_blocks);
+    sr.block_size = Some(stats2.st_blksize);
+    sr.inode = Some(stats2.st_ino);
+    sr.nlink = Some(stats2.st_nlink);
     sr.size = Some(stats.len());
 
     // file perms
@@ -434,8 +444,9 @@ fn main() {
 
     // 'my' permissions!
     // sr.readable =
-    // sr.executable =
-    // sr.writable =
+    sr.readable = Some(access(path, AccessFlags::R_OK).is_ok());
+    sr.executable = Some(access(path, AccessFlags::X_OK).is_ok());
+    sr.writable = Some(access(path, AccessFlags::W_OK).is_ok());
 
 	// Time!!!
     let atime = FileTime::from_last_access_time(&stats);
