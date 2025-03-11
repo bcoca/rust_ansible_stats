@@ -87,10 +87,13 @@ struct ModuleArgs {
     get_mime: bool,
 }
 
-// TODO: move to lib/Ansible::ModuleArgs
-fn debug(debug: String) {
-    //TODO: remove 'stat' and use 'm.module_name'
-    eprintln!("[DEBUG] stat (pid:{:?}) [{}]: {:?}", process::id(), Local::now().format(DATE_FORMAT_STR).to_string(), debug);
+impl ModuleArgs {
+    fn debug(&self, msg: String) {
+        //TODO: remove 'stat' and use 'params.module_name'
+        if self.debug {
+            eprintln!("[DEBUG] {} (pid:{:?}) [{}]: {:?}", self.module_name, process::id(), Local::now().format(DATE_FORMAT_STR).to_string(), msg);
+        }
+    }
 }
 
 fn args_from_file(path: &Path) -> ModuleArgs {
@@ -262,7 +265,7 @@ impl StatResult {
 
     fn fail_json(&mut self, msg: String) {
         // TODO: populate traceback?
-        debug(format!("{:?}", msg));
+        eprintln!("{:?}", msg);
         if self.failed.not() {
             self.failed = true;
         }
@@ -354,11 +357,11 @@ fn main() {
     // Get inputs
     let args: Vec<String> = env::args().collect();
     let args_file = Path::new(&args[1]);
-    let m = args_from_file(args_file);
+    let params = args_from_file(args_file);
 
     // Handle symlink
     let pb: PathBuf;
-    let mut path = Path::new(&m.path);
+    let mut path = Path::new(&params.path);
     // save orig path
     sr.path = String::from_str(path.to_str().unwrap()).unwrap();
     if path.is_symlink() {
@@ -371,7 +374,7 @@ fn main() {
         }
 
         // resolve symlink for rest of info if 'follow'
-        if m.follow.unwrap() {
+        if params.follow.unwrap() {
             path = pb.as_path();
         }
     }
@@ -387,9 +390,7 @@ fn main() {
 
     // now get info about path/link, using symlink cause its more complete in case we didn't 'follow' above.
     let stats = path.symlink_metadata().unwrap();
-    if m.debug {
-        debug(format!("{:?}", stats));
-    }
+    params.debug(format!("{:?}", stats));
 
     // TODO: move to an sr.update_from_stats(stats)
     // file details
@@ -444,21 +445,20 @@ fn main() {
     let mtime = FileTime::from_last_modification_time(&stats);
     sr.mtime = Some(format!("{:?}.{:?}", mtime.unix_seconds(), mtime.nanoseconds()));
 
-    if m.get_checksum {
-        //eprintln!("{:?}", stats.file_type().hash(Algorithm::from_str(&m.checksum_algorithim.unwrap()).expect("Invalid checksum algorithm specified")));
+    if params.get_checksum {
         sr.checksum = Some(
                 hash_file(path,
-                Algorithm::from_str(&m.checksum_algorithim).unwrap()
+                Algorithm::from_str(&params.checksum_algorithim).unwrap()
             )
             .to_lowercase()
         );
     }
 
-	if m.get_attributes {
+	if params.get_attributes {
         sr.set_file_attr(path);
 	}
 
-    if m.get_mime {
+    if params.get_mime {
         sr.set_mime_info(path);
     }
 
