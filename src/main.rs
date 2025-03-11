@@ -10,16 +10,21 @@ use serde::{Serialize, Deserialize};
 use std::collections::HashSet;
 use std::env;
 use std::os::linux::fs::MetadataExt; // TODO: mac/win?
-//use std::os::unix::fs::{FileTypeExt, PermissionsExt};
-use std::os::unix::fs::FileTypeExt;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::ops::Not;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::process::Command;
 use std::str::FromStr;
-use users::{get_user_by_uid, get_group_by_gid, get_effective_uid, get_effective_gid, Users, Groups}; //get_effective?
+use users::{get_user_by_uid, get_group_by_gid, get_effective_uid, get_effective_gid};
 
+// used for debug stamp
 const DATE_FORMAT_STR: &'static str = "%Y-%m-%d  %H:%M:%S";
+
+// used to get unix perms
+const EXEC: [char;4] = ['1','3','5','7'];
+const WRITE: [char; 4] = ['2','3','6','7'];
+const READ: [char; 4] = ['4','5','6','7'];
 
 // TODO: try to get serde to set defaults
 // fn True(){return Some(true);}
@@ -385,20 +390,17 @@ fn main() {
     sr.size = Some(stats.len());
 
     // file perms
-    let perms = stats.permissions();
-    //let fullmode sr.mode = format!("{:#o}", perms.mode());
-    // sr.rusr =
-    // sr.wusr =
-    // sr.xusr =
-
-    // sr.rgrp =
-    // sr.wgrp =
-    // sr.xgrp =
-
-    // sr.roth =
-    // sr.woth =
-    // sr.xoth =
-    // sr.mode = Some(format!"{sr.rusr}{sr.wusr}{sr.xusr}{sr.rgrp}{sr.wgrp}{sr.xgrp}{sr.roth}{sr.woth}{sr.xoth}");
+    let fullmode: Vec<char> = format!("{:#o}", stats.permissions().mode()).drain(..).collect();
+    sr.rusr = Some(READ.contains(&fullmode[5]));
+    sr.wusr = Some(WRITE.contains(&fullmode[5]));
+    sr.xusr = Some(EXEC.contains(&fullmode[5]));
+    sr.rgrp = Some(READ.contains(&fullmode[6]));
+    sr.wgrp = Some(WRITE.contains(&fullmode[6]));
+    sr.xgrp = Some(EXEC.contains(&fullmode[6]));
+    sr.roth = Some(READ.contains(&fullmode[7]));
+    sr.woth = Some(WRITE.contains(&fullmode[7]));
+    sr.xoth = Some(EXEC.contains(&fullmode[7]));
+    sr.mode = Some(fullmode[4..].into_iter().collect::<String>());
 
     sr.pw_name = Some(format!("{:?}", get_user_by_uid(stats.st_uid()).unwrap().name()));
     sr.gr_name = Some(format!("{:?}", get_group_by_gid(stats.st_gid()).unwrap().name()));
