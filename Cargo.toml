@@ -1,7 +1,7 @@
 [package]
 name = "stat"
 version = "0.1.0"
-edition = "2025"
+revision = "2025"
 authors = ["Brian Coca <devnull@spamhere.com>"]
 
 [dependencies]
