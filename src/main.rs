@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process;
 use std::process::Command;
 use std::str::FromStr;
-use users::{get_user_by_uid, get_group_by_gid, get_effective_uid, get_effective_gid};
+use users::{get_user_by_uid, get_group_by_gid};
 
 // used for debug stamp
 const DATE_FORMAT_STR: &'static str = "%Y-%m-%d  %H:%M:%S";
@@ -421,23 +421,28 @@ fn main() {
 
     // file perms NOTE: move to stats2?
     let fullmode: Vec<char> = format!("{:#o}", stats.permissions().mode()).drain(..).collect();
-    sr.rusr = Some(READ.contains(&fullmode[5]));
-    sr.wusr = Some(WRITE.contains(&fullmode[5]));
-    sr.xusr = Some(EXEC.contains(&fullmode[5]));
-    sr.rgrp = Some(READ.contains(&fullmode[6]));
-    sr.wgrp = Some(WRITE.contains(&fullmode[6]));
-    sr.xgrp = Some(EXEC.contains(&fullmode[6]));
-    sr.roth = Some(READ.contains(&fullmode[7]));
-    sr.woth = Some(WRITE.contains(&fullmode[7]));
-    sr.xoth = Some(EXEC.contains(&fullmode[7]));
+    let bound = fullmode.len() - 1;
+    eprintln!("{:?}", bound);
+    if ft.is_char_device().not() {
+	    sr.isuid = Some(READ.contains(&fullmode[bound - 3])); // suid has same values as read (stick == exec)
+	    sr.isgid = Some(WRITE.contains(&fullmode[bound - 3])); // guid has same values as write
+    }
+    sr.rusr = Some(READ.contains(&fullmode[bound - 2]));
+    sr.wusr = Some(WRITE.contains(&fullmode[bound - 2]));
+    sr.xusr = Some(EXEC.contains(&fullmode[bound - 2]));
+    sr.rgrp = Some(READ.contains(&fullmode[bound - 1]));
+    sr.wgrp = Some(WRITE.contains(&fullmode[bound - 1]));
+    sr.xgrp = Some(EXEC.contains(&fullmode[bound - 1]));
+    sr.roth = Some(READ.contains(&fullmode[bound]));
+    sr.woth = Some(WRITE.contains(&fullmode[bound]));
+    sr.xoth = Some(EXEC.contains(&fullmode[bound]));
+    // drop 0-3 as most won't know meaning and just expect the 4
     sr.mode = Some(fullmode[4..].into_iter().collect::<String>());
 
+    // user/group info
     sr.pw_name = Some(format!("{:?}", get_user_by_uid(stats.st_uid()).unwrap().name()));
     sr.gr_name = Some(format!("{:?}", get_group_by_gid(stats.st_gid()).unwrap().name()));
 
-    // 'my' user/group match? NOTE: shouldn't this be setuid/setgid?
-	sr.isuid = Some(get_effective_uid() == stats.st_uid());
-	sr.isgid = Some(get_effective_gid() == stats.st_gid());
 
     // 'my' permissions!
     sr.readable = Some(access(path, AccessFlags::R_OK).is_ok());
@@ -452,7 +457,9 @@ fn main() {
     let mtime = FileTime::from_last_modification_time(&stats);
     sr.mtime = Some(format!("{:?}.{:?}", mtime.unix_seconds(), mtime.nanoseconds()));
 
-    if params.get_checksum {
+    // get checksum if requested, avoid block/char/fifo/etc
+    if params.get_checksum && stats.is_file() {
+        //TODO: on bsds this can work on dirs, switch to error handle
         sr.checksum = Some(
                 hash_file(path,
                 Algorithm::from_str(&params.checksum_algorithim).unwrap()
@@ -472,6 +479,7 @@ fn main() {
     if params.get_mime {
         sr.set_mime_info(path);
     }
+
 
     sr.exit_json(None);
 }
