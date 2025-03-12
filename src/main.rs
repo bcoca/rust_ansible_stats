@@ -498,14 +498,18 @@ fn main() {
     sr.mtime = Some(format!("{:?}.{:?}", mtime.unix_seconds(), mtime.nanoseconds()));
 
     // get checksum if requested, avoid block/char/fifo/etc
-    if params.get_checksum && stats.is_file() {
-        //TODO: on bsds this can work on dirs, switch to error handle
-        sr.checksum = Some(
-                hash_file(path,
-                Algorithm::from_str(&params.checksum_algorithim).unwrap()
-            )
-            .to_lowercase()
-        );
+    if params.get_checksum {
+        if stats.is_file() {
+            //TODO: on bsds this can work on dirs, switch to error handle
+            sr.checksum = Some(
+                    hash_file(path,
+                    Algorithm::from_str(&params.checksum_algorithim).unwrap()
+                )
+                .to_lowercase()
+            );
+        } else {
+            sr.warn("Skipped checksum as the path was not a file.".to_string());
+        }
     }
 
 	if params.get_attributes {
