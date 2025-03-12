@@ -299,7 +299,7 @@ impl StatResult {
         }
 	}
 
-    fn set_mime_info(&mut self, path: &Path) {
+    fn set_mimeinfo_from_file(&mut self, path: &Path) {
         // TODO: pass through the error, check stderr
         let output = Command::new("file")
             .args(["--mime-type", "--mime-encoding", path.to_str().unwrap()])
@@ -326,12 +326,11 @@ impl StatResult {
                 .to_string()
             );
         }else {
-            self.warn(format!("Skipping mime info, invalid mime information: {:?}", mime_info));
+            self.warn(format!("Skipped mime info, invalid mime information: {:?}", mime_info));
         }
     }
 
-    fn set_file_attr(&mut self, path: &Path) {
-        // TODO: pass through the error, check stderr
+    fn set_attr_from_file(&mut self, path: &Path) {
 		let output = match Command::new("lsattr")
 			.args(["-vd", path.to_str().unwrap()])
 			.output() {
@@ -339,7 +338,7 @@ impl StatResult {
             Err(e) => {
                 // lsattr didnt fail, but we failed on executing it
                 self.fail_json(format!("Failed on executing lsattr: {:?}", e));
-                panic!("should not get here");
+                panic!("should not get here, but compiler does not see end in fail_json");
             },
         };
         // lsattr executed, but failed
@@ -362,7 +361,7 @@ impl StatResult {
             }
         } else {
             self.warn(
-                format!("Skipped attributes lsattr failing: rc={:?} stderr={:?}",
+                format!("Skipped attributes dut to lsattr failing: rc={:?} stderr={:?}",
                     output.status.code().unwrap(),
                     std::str::from_utf8(&output.stderr).unwrap()
                 )
@@ -512,16 +511,15 @@ fn main() {
 
 	if params.get_attributes {
         if params.follow || path.is_symlink().not() {
-            sr.set_file_attr(path);
+            sr.set_attr_from_file(path);
         } else {
-            sr.warn("Skipping getting attributes as this is not supported on symlinks".to_string());
+            sr.warn("Skipped attributes as this is not supported on symlinks".to_string());
         }
 	}
 
     if params.get_mime {
-        sr.set_mime_info(path);
+        sr.set_mimeinfo_from_file(path);
     }
-
 
     sr.exit_json(None);
 }
