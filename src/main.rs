@@ -36,7 +36,7 @@ fn d_version() -> String {return "0.0".to_string();}
 #[derive(Deserialize, Default)] // AnsibleModuleArgs macro!
 #[allow(dead_code)]
 struct ModuleArgs {
-    // ocmmon
+    // common
     #[serde(alias = "_ansible_check_mode", default = "d_false")]
     check_mode: bool,
     #[serde(alias = "_ansible_debug", default = "d_false")]
