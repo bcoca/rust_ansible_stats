@@ -97,11 +97,10 @@ impl ModuleArgs {
 
     fn from_argsfile(path: &Path) -> ModuleArgs {
 
-        let file_contents =  std::fs::read_to_string(path);
-        match file_contents {
-            Ok(x) => {
-                    let args: ModuleArgs = match serde_json::from_str(&x) {
-                        Ok(a) => { a },
+        match std::fs::read_to_string(path) {
+            Ok(file_contents) => {
+                    let args: ModuleArgs = match serde_json::from_str(&file_contents) {
+                        Ok(data) => { data },
                         Err(e) => {panic!("Unable to parse the provided arguments file ({:?}) as JSON: {:?}", path, e)},
                     };
                     return args;
