@@ -322,10 +322,15 @@ impl StatResult {
 
     fn set_file_attr(&mut self, path: &Path) {
         // TODO: pass through the error, check stderr
-		let output = Command::new("lsattr")
+		let output = match Command::new("lsattr")
 			.args(["-vd", path.to_str().unwrap()])
-			.output()
-			.expect("failed to execute lsattr");
+			.output() {
+            Ok(o) => { o },
+            Err(e) => {
+                self.fail_json(format!("Failed on exeucting lsattr: {:?}", e));
+                panic!("should not get here");
+            },
+        };
 		let res: Vec<&str> = std::str::from_utf8(&output.stdout)
             .unwrap()
             .split_whitespace()
@@ -335,7 +340,12 @@ impl StatResult {
 		    self.attr_flags = Some(res[1].trim_matches('-').to_string());
 		    self.format_attributes();
         } else {
-            self.warn(format!("Skipping attr info, unexpected lsattr output: {:?}", res));
+            self.warn(
+                format!("Skipping attr info, unexpected lsattr output ({:?}): {:?}",
+                    res,
+                    std::str::from_utf8(&output.stderr).unwrap()
+                )
+            );
         }
     }
 }
