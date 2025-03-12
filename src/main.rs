@@ -500,7 +500,8 @@ fn main() {
     // get checksum if requested, avoid block/char/fifo/etc
     if params.get_checksum {
         if stats.is_file() {
-            //TODO: on bsds this can work on dirs, switch to error handle
+            //TODO: on bsds this can work on dirs, switch to error handle,
+            //      panic::catch_unwind won't get error, still printed, but will stop exit
             sr.checksum = Some(
                     hash_file(path,
                     Algorithm::from_str(&params.checksum_algorithim).unwrap()
