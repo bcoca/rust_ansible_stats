@@ -1,6 +1,12 @@
 /// Returns stat and other info about a file
 extern crate chrono;
+extern crate checksums;
 extern crate exitcode;
+extern crate filetime;
+extern crate nix;
+extern crate phf;
+extern crate serde;
+extern crate users;
 
 use checksums::{Algorithm, hash_file};
 use chrono::Local;
@@ -387,11 +393,15 @@ fn main() {
 
     // Get inputs
     let args: Vec<String> = env::args().collect();
+    if args.len() != 2 {
+        panic!("Expected one argument, but got {:?}", args.len() - 1);
+    }
     let args_file = Path::new(&args[1]);
     let params = ModuleArgs::from_argsfile(args_file);
 
     // result handles output, let it know debug status
     sr.debug = params.debug;
+    params.debug("initalized".to_string());
 
     // Handle symlink
     let mut pb: PathBuf;
