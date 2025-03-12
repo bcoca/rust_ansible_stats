@@ -93,6 +93,7 @@ struct ModuleArgs {
 }
 
 impl ModuleArgs {
+
     // TODO: also move to 'trait'/common lib
     fn debug(&self, msg: String) {
         if self.debug {
@@ -149,7 +150,8 @@ struct StatResult {
     // common, move to macro
     warnings: HashSet<String>,
     deprecations: HashSet<String>,
-    // debug: <String>,
+    #[serde(skip_serializing)]
+    debug: bool, // just here so we dont need to pass args/from args
 
     pub changed: bool,
     pub failed: bool,
@@ -255,7 +257,9 @@ impl StatResult {
 
     // TODO:: add deprecations + log
     fn warn(&mut self, warning: String) {
-        eprintln!("[WARNING] {}", warning);
+        if self.debug {
+            eprintln!("[WARNING] {}", warning);
+        }
         self.warnings.insert(warning);
     }
 
@@ -266,7 +270,9 @@ impl StatResult {
 
     fn fail_json(&mut self, msg: String) {
         // TODO: populate traceback?
-        eprintln!("{:?}", msg);
+        if self.debug {
+            eprintln!("{:?}", msg);
+        }
         if self.failed.not() {
             self.failed = true;
         }
@@ -276,7 +282,11 @@ impl StatResult {
 
     fn return_result(&mut self, msg: Option<String>) {
         self.msg = msg;
-        println!("{}", serde_json::to_string_pretty(&self).unwrap());
+        if self.debug {
+            println!("{}", serde_json::to_string_pretty(&self).unwrap());
+        } else {
+            println!("{}", serde_json::to_string(&self).unwrap());
+        }
     }
 
 // LOCAL //
@@ -327,25 +337,36 @@ impl StatResult {
 			.output() {
             Ok(o) => { o },
             Err(e) => {
-                self.fail_json(format!("Failed on exeucting lsattr: {:?}", e));
+                // lsattr didnt fail, but we failed on executing it
+                self.fail_json(format!("Failed on executing lsattr: {:?}", e));
                 panic!("should not get here");
             },
         };
-		let res: Vec<&str> = std::str::from_utf8(&output.stdout)
-            .unwrap()
-            .split_whitespace()
-            .collect();
-        if res.len() == 3 {
-		    self.version = Some(res[0].to_string());
-		    self.attr_flags = Some(res[1].trim_matches('-').to_string());
-		    self.format_attributes();
+        // lsattr executed, but failed
+        if output.status.success() {
+		    let res: Vec<&str> = std::str::from_utf8(&output.stdout)
+                .unwrap()
+                .split_whitespace()
+                .collect();
+            if res.len() == 3 {
+		        self.version = Some(res[0].to_string());
+		        self.attr_flags = Some(res[1].trim_matches('-').to_string());
+		        self.format_attributes();
+            } else {
+                // lsattr succeded but output was not what we expected
+                self.warn(
+                    format!("Skipped attributes due to unexpected output from lsattr: {:?}",
+                        res,
+                    )
+                );
+            }
         } else {
             self.warn(
-                format!("Skipping attr info, unexpected lsattr output ({:?}): {:?}",
-                    res,
+                format!("Skipped attributes lsattr failing: rc={:?} stderr={:?}",
+                    output.status.code().unwrap(),
                     std::str::from_utf8(&output.stderr).unwrap()
                 )
-            );
+            )
         }
     }
 }
@@ -370,6 +391,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let args_file = Path::new(&args[1]);
     let params = ModuleArgs::from_argsfile(args_file);
+    sr.debug = params.debug;
 
     // Handle symlink
     let mut pb: PathBuf;
@@ -434,7 +456,6 @@ fn main() {
     {
         let fullmode: Vec<char> = format!("{:#o}", stats.permissions().mode()).drain(..).collect();
         let bound = fullmode.len() - 1;
-        eprintln!("{:?}", bound);
         if ft.is_char_device().not() {
             let sid = &fullmode[bound - 3];
 	        sr.isuid = Some(READ.contains(sid)); // suid has same values as read (stick == exec)
