@@ -478,7 +478,7 @@ fn main() {
             sr.xoth = Some(EXEC.contains(oth));
         }
         // drop 0-3 as most won't know meaning and just expect the 4
-        sr.mode = Some(fullmode[bound - 4..].into_iter().collect::<String>());
+        sr.mode = Some(fullmode[bound - 3..].into_iter().collect::<String>());
     }
     // user/group info
     sr.pw_name = Some(format!("{:?}", get_user_by_uid(stats.st_uid()).unwrap().name()));
