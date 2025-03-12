@@ -23,12 +23,6 @@ use users::{get_user_by_uid, get_group_by_gid};
 // used for debug stamp
 const DATE_FORMAT_STR: &'static str = "%Y-%m-%d  %H:%M:%S";
 
-// used to get unix perms (NOTE: move to file common with FA?)
-// used to compare unix access
-const EXEC: [char;4] = ['1','3','5','7'];
-const WRITE: [char;4] = ['2','3','6','7'];
-const READ: [char;4] = ['4','5','6','7'];
-
 // TODO: move to common lib
 fn d_true() -> bool {return true;}
 fn d_false() -> bool {return false;}
@@ -120,7 +114,13 @@ impl ModuleArgs {
     }
 }
 
-// TODO: move to lib, using phf to create constant/static hashmap
+// TODO: move all 4 to lib
+// used to set unix perms booleans
+const EXEC: [char;4] = ['1','3','5','7'];
+const WRITE: [char;4] = ['2','3','6','7'];
+const READ: [char;4] = ['4','5','6','7'];
+
+// used to turn attribute flags to list, using phf to create constant/static hashmap
 static FILE_ATTRIBUTES: phf::Map<&'static str, &'static str> = phf_map! {
     "A" => "noatime",
     "a" => "append",
@@ -420,7 +420,7 @@ fn main() {
         sr.exit_json(Some(format!("Path ({:?}) does not exist.", path)));
     }
 
-    // TODO: move to an sr.get_file_stats(path)
+    // TODO: move to an sr.set_from_file(path)
     // now get info about path/link, using symlink cause its more complete in case we didn't 'follow' above.
     let stats = path.symlink_metadata().unwrap();
     let stats2: FileStat;
