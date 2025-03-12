@@ -290,7 +290,7 @@ impl StatResult {
 	}
 
     fn set_mime_info(&mut self, path: &Path) {
-
+        // TODO: pass through the error, check stderr
         let output = Command::new("file")
             .args(["--mime-type", "--mime-encoding", path.to_str().unwrap()])
             .output()
@@ -321,6 +321,7 @@ impl StatResult {
     }
 
     fn set_file_attr(&mut self, path: &Path) {
+        // TODO: pass through the error, check stderr
 		let output = Command::new("lsattr")
 			.args(["-vd", path.to_str().unwrap()])
 			.output()
