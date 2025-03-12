@@ -497,6 +497,8 @@ fn main() {
     let mtime = FileTime::from_last_modification_time(&stats);
     sr.mtime = Some(format!("{:?}.{:?}", mtime.unix_seconds(), mtime.nanoseconds()));
 
+    // TODO: move each query to it's own thread?
+
     // get checksum if requested, avoid block/char/fifo/etc
     if params.get_checksum {
         if stats.is_file() {
