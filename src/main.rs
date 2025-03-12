@@ -420,29 +420,39 @@ fn main() {
     sr.size = Some(stats.len());
 
     // file perms NOTE: move to stats2?
-    let fullmode: Vec<char> = format!("{:#o}", stats.permissions().mode()).drain(..).collect();
-    let bound = fullmode.len() - 1;
-    eprintln!("{:?}", bound);
-    if ft.is_char_device().not() {
-	    sr.isuid = Some(READ.contains(&fullmode[bound - 3])); // suid has same values as read (stick == exec)
-	    sr.isgid = Some(WRITE.contains(&fullmode[bound - 3])); // guid has same values as write
+    {
+        let fullmode: Vec<char> = format!("{:#o}", stats.permissions().mode()).drain(..).collect();
+        let bound = fullmode.len() - 1;
+        eprintln!("{:?}", bound);
+        if ft.is_char_device().not() {
+            let sid = &fullmode[bound - 3];
+	        sr.isuid = Some(READ.contains(sid)); // suid has same values as read (stick == exec)
+	        sr.isgid = Some(WRITE.contains(sid)); // guid has same values as write
+        }
+        {
+            let usr = &fullmode[bound - 2];
+            sr.rusr = Some(READ.contains(usr));
+            sr.wusr = Some(WRITE.contains(usr));
+            sr.xusr = Some(EXEC.contains(usr));
+        }
+        {
+            let grp = &fullmode[bound - 1];
+            sr.rgrp = Some(READ.contains(grp));
+            sr.wgrp = Some(WRITE.contains(grp));
+            sr.xgrp = Some(EXEC.contains(grp));
+        }
+        {
+            let oth = &fullmode[bound];
+            sr.roth = Some(READ.contains(oth));
+            sr.woth = Some(WRITE.contains(oth));
+            sr.xoth = Some(EXEC.contains(oth));
+        }
+        // drop 0-3 as most won't know meaning and just expect the 4
+        sr.mode = Some(fullmode[bound - 4..].into_iter().collect::<String>());
     }
-    sr.rusr = Some(READ.contains(&fullmode[bound - 2]));
-    sr.wusr = Some(WRITE.contains(&fullmode[bound - 2]));
-    sr.xusr = Some(EXEC.contains(&fullmode[bound - 2]));
-    sr.rgrp = Some(READ.contains(&fullmode[bound - 1]));
-    sr.wgrp = Some(WRITE.contains(&fullmode[bound - 1]));
-    sr.xgrp = Some(EXEC.contains(&fullmode[bound - 1]));
-    sr.roth = Some(READ.contains(&fullmode[bound]));
-    sr.woth = Some(WRITE.contains(&fullmode[bound]));
-    sr.xoth = Some(EXEC.contains(&fullmode[bound]));
-    // drop 0-3 as most won't know meaning and just expect the 4
-    sr.mode = Some(fullmode[4..].into_iter().collect::<String>());
-
     // user/group info
     sr.pw_name = Some(format!("{:?}", get_user_by_uid(stats.st_uid()).unwrap().name()));
     sr.gr_name = Some(format!("{:?}", get_group_by_gid(stats.st_gid()).unwrap().name()));
-
 
     // 'my' permissions!
     sr.readable = Some(access(path, AccessFlags::R_OK).is_ok());
