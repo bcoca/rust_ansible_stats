@@ -389,6 +389,8 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let args_file = Path::new(&args[1]);
     let params = ModuleArgs::from_argsfile(args_file);
+
+    // result handles output, let it know debug status
     sr.debug = params.debug;
 
     // Handle symlink
@@ -397,7 +399,8 @@ fn main() {
     // save orig path
     sr.path = String::from_str(path.to_str().unwrap()).unwrap();
     if path.is_symlink() {
-        pb = path.read_link().expect("Unable to follow symlink"); //NOTE: resolve recursively? check py version
+        pb = path.read_link().expect("Unable to follow symlink");
+        // non normalized 'first target' of given link
         sr.lnk_target = Some(format!("{:?}", pb));
         if params.follow {
             path = pb.as_path();
@@ -407,6 +410,7 @@ fn main() {
                 path = pb.as_path();
             }
         }
+        // normalize final resolved file
         sr.lnk_source = Some(format!("{:?}", pb.canonicalize().unwrap()));
     }
 
@@ -428,8 +432,6 @@ fn main() {
     } else {
         stats2 = lstat(path).unwrap();
     }
-    params.debug(format!("{:?}", stats));
-    params.debug(format!("{:?}", stats2));
 
     // file details
 	sr.isdir = Some(stats.is_dir());
