@@ -6,7 +6,7 @@ extern crate filetime;
 extern crate nix;
 extern crate phf;
 extern crate serde;
-extern crate users;
+extern crate uzers;
 
 use checksums::{Algorithm, hash_file};
 use chrono::Local;
@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::process;
 use std::process::Command;
 use std::str::FromStr;
-use users::{get_user_by_uid, get_group_by_gid};
+use uzers::{get_user_by_uid, get_group_by_gid};
 
 // used for debug stamp
 const DATE_FORMAT_STR: &str = "%Y-%m-%d  %H:%M:%S";
