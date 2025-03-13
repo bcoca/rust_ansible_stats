@@ -1,9 +1,15 @@
-.PHONY: all clean build
+.PHONY: all clean build debug release
 
-all: build
+all: clean build
 
 clean:
 	cargo clean
 
 build:
-	cargo build
+	RUSTFLAGS="--remap-path-prefix ${HOME}=~" cargo build
+
+debug:
+	RUSTFLAGS="--remap-path-prefix ${HOME}=~" cargo build --profile=release-with-debug
+
+release:
+	cargo build --release

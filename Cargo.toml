@@ -17,3 +17,10 @@ serde_json = {version = "1.0", features = ["preserve_order"]}
 simple-logging = "2.0.2"
 uzers = "0.12.1"
 #panic = 'abort'
+
+[profile.release]
+lto = true
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true
