@@ -108,13 +108,13 @@ impl ModuleArgs {
                     Ok(data) => { data },
                     Err(e) => {panic!("Unable to parse the provided arguments file ({:?}) as JSON: {:?}", path, e)},
                 };
-                return args;
+                args
             },
             Err(e) => {
                 // TODO: fail_json/raise error?
                 panic!("Unable to read the provided arguments file({:?}): {:?} !", path, e);
             },
-        };
+        }
     }
 }
 
