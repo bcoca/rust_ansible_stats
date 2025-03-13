@@ -1,0 +1,10 @@
+{
+	"_ansible_debug": true,
+	"_ansible_module_name": "stat",
+	"checksum_algorithim": "sha1",
+	"follow": false,
+	"get_checksum": true,
+	"get_attributes": true,
+	"get_mime": true,
+	"path": "/var/tmp/"
+}

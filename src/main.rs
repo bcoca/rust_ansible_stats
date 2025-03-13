@@ -27,17 +27,17 @@ use std::str::FromStr;
 use users::{get_user_by_uid, get_group_by_gid};
 
 // used for debug stamp
-const DATE_FORMAT_STR: &'static str = "%Y-%m-%d  %H:%M:%S";
+const DATE_FORMAT_STR: &str = "%Y-%m-%d  %H:%M:%S";
 
 // TODO: move to common lib
-fn d_true() -> bool {return true;}
-fn d_false() -> bool {return false;}
-fn d_sha1() -> String {return "sha1".to_string();}
+fn d_true() -> bool {true}
+fn d_false() -> bool {false}
+fn d_sha1() -> String {"sha1".to_string()}
 // fn d_selinux_fs() -> Vec<str> {return vec!["fuse", "nfs", "vboxsf", "ramfs", "9p", "vfat"];}
-fn d_shell() -> String {return "/bin/sh".to_string();}
-fn d_syslog_facility() -> String {return "INFO".to_string();}
-fn d_v() -> u32 {return 0;}
-fn d_version() -> String {return "0.0".to_string();}
+fn d_shell() -> String {"/bin/sh".to_string()}
+fn d_syslog_facility() -> String {"INFO".to_string()}
+fn d_v() -> u32 {0}
+fn d_version() -> String {"0.0".to_string()}
 
 #[derive(Deserialize, Default)] // AnsibleModuleArgs macro!
 #[allow(dead_code)]
@@ -97,19 +97,18 @@ impl ModuleArgs {
     // TODO: also move to 'trait'/common lib
     fn debug(&self, msg: String) {
         if self.debug {
-            eprintln!(" [DEBUG] {} (pid:{:?}) [{}]: {:?}", self.module_name, process::id(), Local::now().format(DATE_FORMAT_STR).to_string(), msg);
+            eprintln!(" [DEBUG] {} (pid:{:?}) [{}]: {:?}", self.module_name, process::id(), Local::now().format(DATE_FORMAT_STR), msg);
         }
     }
 
     fn from_argsfile(path: &Path) -> ModuleArgs {
-
         match std::fs::read_to_string(path) {
             Ok(file_contents) => {
-                    let args: ModuleArgs = match serde_json::from_str(&file_contents) {
-                        Ok(data) => { data },
-                        Err(e) => {panic!("Unable to parse the provided arguments file ({:?}) as JSON: {:?}", path, e)},
-                    };
-                    return args;
+                let args: ModuleArgs = match serde_json::from_str(&file_contents) {
+                    Ok(data) => { data },
+                    Err(e) => {panic!("Unable to parse the provided arguments file ({:?}) as JSON: {:?}", path, e)},
+                };
+                return args;
             },
             Err(e) => {
                 // TODO: fail_json/raise error?
@@ -425,7 +424,7 @@ fn main() {
     }
 
     // Check if path exists, error if permissions issue
-    let bad_path = |e| {sr.fail_json(format!("Cannot stat path ({:?}): {}", path, e)); return false;};
+    let bad_path = |e| {sr.fail_json(format!("Cannot stat path ({:?}): {}", path, e)); false};
     sr.exists = path.try_exists().unwrap_or_else(bad_path);
 
     // return now if no path, no other info will be available
@@ -435,13 +434,9 @@ fn main() {
 
     // TODO: move to an sr.set_from_file(path)
     // now get info about path/link, using symlink cause its more complete in case we didn't 'follow' above.
+    // TODO: handle stat errors more gracefully
     let stats = path.symlink_metadata().unwrap();
-    let stats2: FileStat;
-    if params.follow {
-        stats2 = stat(path).unwrap();
-    } else {
-        stats2 = lstat(path).unwrap();
-    }
+    let stats_ext: FileStat = if params.follow {stat(path).unwrap()} else {lstat(path).unwrap()};
 
     // file details
 	sr.isdir = Some(stats.is_dir());
@@ -456,13 +451,13 @@ fn main() {
     sr.issock = Some(ft.is_socket());
 
     // extended file data
-    sr.blocks = Some(stats2.st_blocks);
-    sr.block_size = Some(stats2.st_blksize);
-    sr.inode = Some(stats2.st_ino);
-    sr.nlink = Some(stats2.st_nlink);
+    sr.blocks = Some(stats_ext.st_blocks);
+    sr.block_size = Some(stats_ext.st_blksize);
+    sr.inode = Some(stats_ext.st_ino);
+    sr.nlink = Some(stats_ext.st_nlink);
     sr.size = Some(stats.len());
 
-    // file perms NOTE: move to stats2?
+    // file perms NOTE: move to stats_ext?
     {
         let fullmode: Vec<char> = format!("{:#o}", stats.permissions().mode()).drain(..).collect();
         let bound = fullmode.len() - 1;
@@ -490,7 +485,7 @@ fn main() {
             sr.xoth = Some(EXEC.contains(oth));
         }
         // drop 0-3 as most won't know meaning and just expect the 4
-        sr.mode = Some(fullmode[bound - 3..].into_iter().collect::<String>());
+        sr.mode = Some(fullmode[bound - 3..].iter().collect::<String>());
     }
     // user/group info
     sr.pw_name = Some(format!("{:?}", get_user_by_uid(stats.st_uid()).unwrap().name()));
