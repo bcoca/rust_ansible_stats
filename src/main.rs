@@ -17,8 +17,8 @@ use phf::phf_map;
 use serde::{Serialize, Deserialize};
 use std::collections::HashSet;
 use std::env;
-use std::os::linux::fs::MetadataExt; // TODO: mac/win?
-use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+use std::os::unix::fs::{FileTypeExt, PermissionsExt}; // macos/win? #[cfg(unix)] ?
+use std::os::linux::fs::MetadataExt;
 use std::ops::Not;
 use std::path::{Path, PathBuf};
 use std::process;
