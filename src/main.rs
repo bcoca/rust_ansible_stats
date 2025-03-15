@@ -18,7 +18,7 @@ use serde::{Serialize, Deserialize};
 use std::collections::HashSet;
 use std::env;
 use std::os::unix::fs::{FileTypeExt, PermissionsExt}; // macos/win? #[cfg(unix)] ?
-use std::os::linux::fs::MetadataExt;
+use std::os::linux::fs::MetadataExt; // TODO move to cfg, but fix specific calls in code first
 use std::ops::Not;
 use std::path::{Path, PathBuf};
 use std::process;
@@ -304,6 +304,7 @@ impl StatResult {
 	}
 
     fn set_mimeinfo_from_file(&mut self, path: &Path) {
+        // TODO: use generic/macro for command exec?
         // TODO: pass through the error, check stderr
         let output = Command::new("file")
             .args(["--mime-type", "--mime-encoding", path.to_str().unwrap()])
@@ -433,8 +434,9 @@ fn main() {
     }
 
     // TODO: move to an sr.set_from_file(path)
+    // TODO: handle stat errors explicitly
+    // NOTE: could stat command/syscall with explicit format and parse output?
     // now get info about path/link, using symlink cause its more complete in case we didn't 'follow' above.
-    // TODO: handle stat errors more gracefully
     let stats = path.symlink_metadata().unwrap();
     let stats_ext: FileStat = if params.follow {stat(path).unwrap()} else {lstat(path).unwrap()};
 
