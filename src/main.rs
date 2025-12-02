@@ -287,7 +287,10 @@ impl StatResult {
     fn return_result(&mut self, msg: Option<String>) {
         self.msg = msg;
         if self.debug {
-            println!("{}", serde_json::to_string_pretty(&self).unwrap());
+            match serde_json::to_string_pretty(&self) {
+                Ok(s) => {println!("{}", s)},
+                Err(e) => {panic!("Unable to parse the results as JSON: {:?}", e)},
+            }
         } else {
             println!("{}", serde_json::to_string(&self).unwrap());
         }
