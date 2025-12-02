@@ -29,11 +29,15 @@ use uzers::{get_user_by_uid, get_group_by_gid};
 // used for debug stamp
 const DATE_FORMAT_STR: &str = "%Y-%m-%d  %H:%M:%S";
 
+macro_rules !vec_of_strings {
+    ($($x:expr),*) => (vec![$($x.to_string()),*]);
+}
+
 // TODO: move to common lib
 fn d_true() -> bool {true}
 fn d_false() -> bool {false}
 fn d_sha1() -> String {"sha1".to_string()}
-// fn d_selinux_fs() -> Vec<str> {return vec!["fuse", "nfs", "vboxsf", "ramfs", "9p", "vfat"];}
+fn d_selinux_fs() -> Vec<String> {return vec_of_strings!["fuse", "nfs", "vboxsf", "ramfs", "9p", "vfat"];}
 fn d_shell() -> String {"/bin/sh".to_string()}
 fn d_syslog_facility() -> String {"INFO".to_string()}
 fn d_v() -> u32 {0}
@@ -42,6 +46,8 @@ fn d_version() -> String {"0.0".to_string()}
 #[derive(Deserialize, Default)] // AnsibleModuleArgs macro!
 #[allow(dead_code)]
 struct ModuleArgs {
+    #[serde(alias = "_ansible_module_name")]
+    module_name: String,
     // common
     #[serde(alias = "_ansible_check_mode", default = "d_false")]
     check_mode: bool,
@@ -51,18 +57,12 @@ struct ModuleArgs {
     diff: bool,
     #[serde(alias = "_ansible_keep_remote_files", default = "d_false")]
     keep_remote_files: bool,
-    #[serde(alias = "_ansible_ignore_unknown_opts", default = "d_false")]
-    ignore_unknown_opts: bool, // normally use #[serde(deny_unknown_fields)] but we want this at runtime?
-    #[serde(alias = "_ansible_module_name")]
-    module_name: String,
-    #[serde(alias = "_ansible_no_log", default = "d_false")]
-    no_log: bool,
     #[serde(alias = "_ansible_remote_tmp")]
     remote_tmp: Option<String>,
     #[serde(alias = "_ansible_target_log_info")]
     target_log_info: Option<String>,
-//    #[serde(alias = "_ansible_selinux_special_fs", default = "d_selinux_fs")]
-//    selinux_special_fs: Vec<str>,
+    #[serde(alias = "_ansible_selinux_special_fs", default = "d_selinux_fs")]
+    selinux_special_fs: Vec<String>,
     #[serde(alias = "_ansible_shell_executable", default = "d_shell")]
     shell_executable: String,
     #[serde(alias = "_ansible_socket_path")]

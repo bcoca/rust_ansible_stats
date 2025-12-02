@@ -18,6 +18,9 @@ simple-logging = "2.0.2"
 uzers = "0.12.1"
 #panic = 'abort'
 
+#[dependencies.ansible_utils]
+#path = "../ansible_utils"
+
 [profile.release]
 lto = true
 
